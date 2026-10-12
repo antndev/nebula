@@ -69,6 +69,7 @@ object NebulaSdk {
                 player?.kick(Component.text(command.reason ?: "Kicked by an administrator."))
             }
             is Command.ExpectPlayer -> {
+                expected.values.removeIf { it.expiresAt < System.currentTimeMillis() }
                 expected[command.uuid] = command
                 logger.info("expecting {} via transfer.", command.uuid)
             }

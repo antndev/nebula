@@ -21,7 +21,7 @@ object ScalingPolicy {
             return ScalingDecision.Start(scaling.minInstances - active.size, "below minimum")
         }
 
-        val spare = active.count { it.connectedPlayers < scaling.playersToScaleUp }
+        val spare = active.count { it.load(now) < scaling.playersToScaleUp }
         val cooledDown = now - lastScaledAt >= scaling.scalingCooldownSeconds * 1000L
         val belowMax = scaling.maxInstances == null || active.size < scaling.maxInstances
 

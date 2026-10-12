@@ -26,12 +26,16 @@ import net.minestom.server.network.player.GameProfile
 import org.slf4j.LoggerFactory
 import java.io.DataInputStream
 import java.io.EOFException
+import java.io.IOException
 import java.io.OutputStream
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 private const val READ_TIMEOUT_MS = 10_000
+private const val MAX_CONNECTION_SECONDS = 30L
 
 class Entrypoint(
     private val config: Config,
@@ -40,12 +44,20 @@ class Entrypoint(
 ) {
     private val logger = LoggerFactory.getLogger(Entrypoint::class.java)
     private val contextEvaluator = ContextEvaluator(config.entrypointEvaluationBehavior, config.services, registry)
+    private val closer = Executors.newSingleThreadScheduledExecutor()
 
     init {
         val server = ServerSocket(Config.ENTRYPOINT_PORT)
         Thread.ofPlatform().name("entrypoint").start {
             while (true) {
-                val socket = server.accept()
+                val socket = try {
+                    server.accept()
+                } catch (e: IOException) {
+                    logger.warn("accepting a connection failed: {}", e.message)
+                    Thread.sleep(100)
+                    continue
+                }
+                closer.schedule({ socket.close() }, MAX_CONNECTION_SECONDS, TimeUnit.SECONDS)
                 Thread.ofVirtual().start { socket.use { handle(it) } }
             }
         }

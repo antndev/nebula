@@ -4,8 +4,6 @@ import nebula.config.Config
 import nebula.config.JoiningBehavior
 import nebula.config.Service
 import nebula.protocol.NebulaPlayer
-import java.net.InetSocketAddress
-import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -52,14 +50,21 @@ class ServiceRegistry {
         update(hostPort) { it.copy(status = ServiceInstanceStatus.STOPPED, statusSince = System.currentTimeMillis()) }
     }
 
-    fun playerExpected(hostPort: Int, until: Long) {
-        update(hostPort) { it.copy(lastActiveAt = maxOf(it.lastActiveAt, until)) }
+    fun playerExpected(hostPort: Int, uuid: String, until: Long) {
+        val now = System.currentTimeMillis()
+        update(hostPort) {
+            it.copy(
+                expected = it.expected.filterValues { expiry -> expiry > now } + (uuid to until),
+                lastActiveAt = maxOf(it.lastActiveAt, until),
+            )
+        }
     }
 
     fun playerJoined(hostPort: Int, player: NebulaPlayer) {
         update(hostPort) { instance ->
             instance.copy(
                 players = instance.players.filterNot { it.uuid == player.uuid } + player,
+                expected = instance.expected - player.uuid,
                 lastActiveAt = maxOf(instance.lastActiveAt, System.currentTimeMillis()),
             )
         }
@@ -111,23 +116,21 @@ class ServiceRegistry {
             instances.count { it.status != ServiceInstanceStatus.STOPPED }
         }
 
-    fun nextAvailablePort(): Int? {
+    fun nextAvailablePort(blocked: Set<Int>): Int? {
         val usedPorts = instancesByService.values.flatten()
             .map { it.hostPort }
             .toSet()
-        return Config.NODE_PORT_RANGE.firstOrNull { it !in usedPorts && isPortFree(it) }
+        return Config.NODE_PORT_RANGE.firstOrNull { it !in usedPorts && it !in blocked }
     }
 
-    private fun isPortFree(port: Int): Boolean =
-        runCatching { ServerSocket().use { it.bind(InetSocketAddress(port)) } }.isSuccess
-
     fun selectJoinTarget(service: Service): ServiceInstance {
+        val now = System.currentTimeMillis()
         val candidates = getInstances(service.name).filter {
-            it.status == ServiceInstanceStatus.RUNNING && it.connectedPlayers < service.scaling.maxPlayersPerInstance
+            it.status == ServiceInstanceStatus.RUNNING && it.load(now) < service.scaling.maxPlayersPerInstance
         }
         return when (service.joiningBehavior) {
-            JoiningBehavior.FILL_EXISTING -> candidates.maxByOrNull { it.connectedPlayers }
-            JoiningBehavior.LEAST_PLAYERS -> candidates.minByOrNull { it.connectedPlayers }
+            JoiningBehavior.FILL_EXISTING -> candidates.maxByOrNull { it.load(now) }
+            JoiningBehavior.LEAST_PLAYERS -> candidates.minByOrNull { it.load(now) }
         } ?: error("no joinable instances are available for service '${service.name}'.")
     }
 }

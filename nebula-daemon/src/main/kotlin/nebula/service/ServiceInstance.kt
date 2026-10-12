@@ -9,9 +9,12 @@ data class ServiceInstance(
     val token: String,
     val status: ServiceInstanceStatus = ServiceInstanceStatus.STARTING,
     val players: List<NebulaPlayer> = emptyList(),
+    val expected: Map<String, Long> = emptyMap(),
     val statusSince: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis(),
 ) {
     val connectedPlayers: Int
         get() = players.size
+
+    fun load(now: Long): Int = players.size + expected.values.count { it > now }
 }

@@ -11,27 +11,10 @@ plugins {
     application
 }
 
-group = "dev.antn"
-version = "2.0.0-SNAPSHOT"
-
-repositories {
-    maven(url = "https://central.sonatype.com/repository/maven-snapshots/") {
-        content {
-            includeModule("net.minestom", "minestom")
-            includeModule("net.minestom", "testing")
-        }
-    }
-    mavenCentral()
-}
-
 dependencies {
     implementation(project(":nebula-sdk"))
     implementation("me.devnatan:docker-kotlin:0.14.4")
-    implementation("org.slf4j:slf4j-api:2.0.13")
     implementation("ch.qos.logback:logback-classic:1.5.32")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("net.minestom:minestom:26_3-SNAPSHOT")
     implementation("io.ktor:ktor-server-cio:3.3.3")
     implementation("io.ktor:ktor-server-core:3.3.3")
     implementation("io.ktor:ktor-server-websockets:3.3.3")

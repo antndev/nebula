@@ -28,6 +28,7 @@ class Scaler(
 ) {
     private val logger = LoggerFactory.getLogger(Scaler::class.java)
     private val lastScaledAt = ConcurrentHashMap<String, Long>()
+    private val blockedPorts = ConcurrentHashMap.newKeySet<Int>()
 
     suspend fun reattach() {
         val containers = dockerService.listManagedContainers()
@@ -139,42 +140,16 @@ class Scaler(
     private fun isImageMissing(e: Exception): Boolean =
         e is ImageNotFoundException || e.message?.contains("No such image", ignoreCase = true) == true
 
+    private fun isPortTaken(e: Exception): Boolean {
+        val message = e.message ?: return false
+        return listOf("port is already allocated", "address already in use", "ports are not available")
+            .any { message.contains(it, ignoreCase = true) }
+    }
+
     private suspend fun pullImage(image: String) {
         logger.info("pulling image '{}'...", image)
-
-        val layerStatus = mutableMapOf<String, String>()
-        var upToDate = false
-
-        dockerService.pullImage(image).collect { pull ->
-            val status = pull.statusText
-
-            if (pull.id == null) {
-                if (status.contains("up to date", ignoreCase = true) ||
-                    status.contains("Status:", ignoreCase = true)
-                ) {
-                    upToDate = status.contains("up to date", ignoreCase = true)
-                    logger.info("  {}", status)
-                }
-                return@collect
-            }
-
-            val id = pull.id ?: return@collect
-            val layerId = id.take(12)
-
-            if (layerStatus[id] == status) return@collect
-            layerStatus[id] = status
-
-            when {
-                status == "Pull complete" || status == "Already exists" || status == "Download complete" ->
-                    logger.info("  [{}] {}", layerId, status)
-                status == "Pulling fs layer" || status == "Waiting" ->
-                    logger.debug("  [{}] {}", layerId, status)
-            }
-        }
-
-        if (!upToDate) {
-            logger.info("image '{}' ready.", image)
-        }
+        dockerService.pullImage(image).collect {}
+        logger.info("image '{}' ready.", image)
     }
 
     private suspend fun createInstance(service: Service): ServiceInstance {
@@ -186,7 +161,7 @@ class Scaler(
             "this node is already at its maximum of ${config.maxInstancesPerNode} instances."
         }
 
-        val hostPort = registry.nextAvailablePort()
+        val hostPort = registry.nextAvailablePort(blockedPorts)
             ?: error("no free host ports remain in the node port range.")
 
         logger.info("creating {}.", "${service.name}:$hostPort")
@@ -213,6 +188,10 @@ class Scaler(
         val containerId = try {
             dockerService.createAndStartContainer(request)
         } catch (e: Exception) {
+            if (isPortTaken(e)) {
+                blockedPorts += hostPort
+                logger.warn("host port {} is taken by another program, skipping it from now on.", hostPort)
+            }
             if (!isImageMissing(e)) throw e
             logger.info("image '{}' is not present locally.", service.image)
             pullImage(service.image)

@@ -35,8 +35,7 @@ class ServiceSocketServer(
 
     suspend fun sendCommand(servicePort: Int, command: Command): Boolean {
         val session = sessions[servicePort] ?: return false
-        session.send(Frame.Text(json.encodeToString(Command.serializer(), command)))
-        return true
+        return runCatching { session.send(Frame.Text(json.encodeToString(Command.serializer(), command))) }.isSuccess
     }
 
     private fun id(hostPort: Int): String =

@@ -13,8 +13,8 @@ import me.devnatan.dockerkt.resource.container.remove
 
 data class CreateContainerRequest(
     val image: String,
-    val containerPort: UShort? = null,
-    val hostPort: UShort? = null,
+    val containerPort: UShort,
+    val hostPort: UShort,
     val labels: Map<String, String> = emptyMap(),
     val env: Map<String, String> = emptyMap(),
     val extraHosts: List<String> = emptyList(),
@@ -50,19 +50,15 @@ class DockerService(
                     env = request.env.map { (k, v) -> "$k=$v" }
                 }
 
-                request.containerPort?.let { exposedPort(it) }
+                exposedPort(request.containerPort)
 
                 hostConfig {
                     if (request.extraHosts.isNotEmpty()) {
                         extraHosts = request.extraHosts
                     }
 
-                    val containerPort = request.containerPort
-                    val hostPort = request.hostPort
-                    if (containerPort != null && hostPort != null) {
-                        portBindings(containerPort) {
-                            add(PortBinding(ip = "0.0.0.0", port = hostPort))
-                        }
+                    portBindings(request.containerPort) {
+                        add(PortBinding(ip = "0.0.0.0", port = request.hostPort))
                     }
                 }
             }
