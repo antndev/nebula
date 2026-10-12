@@ -30,6 +30,8 @@ Consequences (accepted on purpose):
   `ExpectPlayer` to the target → login success → `Transfer` in the configuration phase.
 - **decided:** the entrypoint runs offline (no Mojang call, no encryption). Identity is proven by
   the target backend, which is online-mode (see *auth*). Saves one Mojang join per network entry.
+- **decided:** every entrypoint connection is closed after 30s at the latest (a client that trickles
+  bytes can't hold sockets forever), and a failed `accept` is logged without stopping the loop.
 - **open:** routing = a default service + a hostname→service map, e.g.
   `bedwars.example.com → bedwars-lobby`, `default → lobby`. Config format / YAML still open.
 
@@ -38,6 +40,8 @@ Consequences (accepted on purpose):
 - Service instances get host ports from the fixed node range `32800-33799` — the hard limit
   (1000/node). On top of that a configurable per-node cap (`3..1000`, default 50).
 - Inside the container every service listens on `25565` (own network namespace, no clash).
+- The daemon runs in Docker, so it can't test host ports itself. A port Docker refuses because
+  another program holds it is skipped for the rest of the daemon run.
 
 ## auth & transfers — decided (option A, replaces the old HMAC ticket plan)
 Every backend runs **online-mode** → real uuid, signed skin/cape and encryption for free. Access
@@ -108,14 +112,17 @@ Per service, one decision per reconcile (`ScalingPolicy`, pure, no Docker):
   idle longest), but only if `minInstances` and the warm spare still hold afterwards. `null` = never.
 - a sent `ExpectPlayer` counts as activity until it expires → no instance is stopped while a player
   is on the way to it.
-- routing only picks `RUNNING` instances with room (`maxPlayersPerInstance`).
+- load = connected players + players still on the way (unexpired `ExpectPlayer`). Routing and
+  "spare" both use load, so a burst of joins can't overfill an instance before anyone arrives.
+- routing only picks `RUNNING` instances with room (load below `maxPlayersPerInstance`).
 
 ## services (generic) — decided
 No big `kind` enum, no class per gamemode. One generic `Service`; specifics come from config flags
 the daemon interprets. A new gamemode = a new config entry, not new code.
 Main flag: `persistent` (bool) = whether the world must be saved. SMPs are persistent, don't scale,
 and never auto-delete (`scaleDownEmptyAfterSeconds = null` = never). *(open: what the "key" of a
-keyed/persistent instance is — per player, per world?)*
+keyed/persistent instance is — per player, per world?)* Not in code yet; the flag comes back
+together with persistent services.
 
 ## decentralized / multi-node — open
 Every node runs its own daemon + entrypoint; you join and get transferred — maybe to another node,

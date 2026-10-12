@@ -5,6 +5,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import nebula.config.Config
+import nebula.service.ServiceInstanceStatus
 import nebula.service.ServiceRegistry
 import nebula.service.TransferService
 import net.kyori.adventure.text.Component
@@ -85,7 +86,8 @@ class Entrypoint(
 
         val online = registry.snapshot().values.sumOf { instances -> instances.sumOf { it.connectedPlayers } }
         val capacity = config.services.sumOf { service ->
-            registry.getActiveInstances(service.name).size * service.scaling.maxPlayersPerInstance
+            registry.getInstances(service.name).count { it.status == ServiceInstanceStatus.RUNNING } *
+                service.scaling.maxPlayersPerInstance
         }
         val response = buildJsonObject {
             putJsonObject("version") {
